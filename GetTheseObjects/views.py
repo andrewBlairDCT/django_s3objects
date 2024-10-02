@@ -1,30 +1,26 @@
-from django.shortcuts import render
-from django.http import JsonResponse
-from django.views import View
-from .models import Image
 import json
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from .models import Image  
 
-class ImageView(View):
-    
-    def get(self, request):
-        imageData = Image.objects.all().values("id", "name", "type", "created")
-        image_list = list(imageData) 
-        return JsonResponse(image_list_list, safe=False)
-
-    def post(self, request):
+@csrf_exempt
+def s3_event_webhook(request):
+    if request.method == 'POST':
         try:
-            data = json.loads(request.body)
-            image = Image.objects.create(
-                name=data.get("name"),
-                type=data.get("type"),
-                created=data.get("created")
-            )
-            return JsonResponse({
-                "id": image.id,
-                "name": image.name,
-                "type": image.type,
-                "created": image.created
-            }, status=201)
+         
+            payload = json.loads(request.body)
+      
+            for record in payload.get('Records', []):
+                if record.get('eventName') == 'ObjectCreated:Put':
+                    s3_object_key = record['s3']['object']['key']
+                    bucket_name = record['s3']['bucket']['name']
+        
+                    file_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_object_key}"
+
+           
+                    Image.objects.create(image_url=file_url)
+
+            return JsonResponse({"status": "success"}, status=200)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=400)
-
+    return JsonResponse({"error": "Invalid request"}, status=400)
